@@ -1,0 +1,17 @@
+{
+  "name": "Missões da Nossa Família",
+  "short_name": "Missões",
+  "description": "Tarefas, estudos e conquistas da família",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fdf4ff",
+  "theme_color": "#c084fc",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
