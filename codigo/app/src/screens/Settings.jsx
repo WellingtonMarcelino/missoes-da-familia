@@ -76,14 +76,16 @@ function Members() {
             {m.photo_path && <button className="btn small ghost" onClick={() => act(async () => { await supabase.storage.from('fotos').remove([m.photo_path]); await sel(supabase.from('members').update({ photo_path: null }).eq('id', m.id)) }, 'Foto removida')}>Tirar foto</button>}
             <button className="btn small ghost" onClick={() => setEdit(m)}>🎨 Cor e personagem</button>
             {m.role === 'child' && <button className="btn small primary" onClick={() => setPinFor(m)}>{m.user_id ? '🔑 Trocar PIN' : '🔑 Criar PIN'}</button>}
+            {m.role === 'parent' && !m.user_id && <a className="btn small ok" target="_blank" rel="noreferrer" href={'https://wa.me/?text=' + encodeURIComponent('Oi! Crie sua conta no app Missões da Nossa Família: abra ' + window.location.origin + window.location.pathname + ' → "Sou responsável" → "Criar conta", usando este e-mail: ' + m.invite_email)}>📲 Enviar convite pelo WhatsApp</a>}
             {m.role === 'parent' && m.id !== me.id && <button className="btn small danger" onClick={() => act(() => sel(supabase.from('members').update({ active: false }).eq('id', m.id)), 'Acesso removido')}>Remover acesso</button>}
           </div>
         </Section>
       ))}
       <Section title="Convidar responsável (ex.: esposa)">
+        <p className="muted small">O app não manda e-mail de convite. Cadastre o e-mail dela aqui e depois envie o link pelo WhatsApp.</p>
         <label className="field"><span>Nome</span><input value={inv.name} onChange={(e) => setInv({ ...inv, name: e.target.value })} /></label>
         <label className="field"><span>E-mail</span><input type="email" value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} /></label>
-        <button className="btn primary" disabled={!inv.name || !inv.email.includes('@')} onClick={() => act(() => sel(supabase.from('members').insert({ name: inv.name.trim(), role: 'parent', invite_email: inv.email.trim().toLowerCase(), avatar: '👩', color: '#db2777', sort: 0 })).then(() => setInv({ name: '', email: '' })), 'Convite criado! Agora ela cria a conta com esse e-mail.')}>Convidar</button>
+        <button className="btn primary" disabled={!inv.name || !inv.email.includes('@')} onClick={() => act(() => sel(supabase.from('members').insert({ name: inv.name.trim(), role: 'parent', invite_email: inv.email.trim().toLowerCase(), avatar: '👩', color: '#db2777', sort: 0 })).then(() => setInv({ name: '', email: '' })), 'Convite registrado! O app não envia e-mail: toque em “Enviar convite pelo WhatsApp”.')}>Convidar</button>
       </Section>
       {pinFor && <PinModal kid={pinFor} onClose={() => setPinFor(null)} act={act} />}
       {edit && <EditModal m={edit} onClose={() => setEdit(null)} act={act} />}
