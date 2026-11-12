@@ -1013,9 +1013,6 @@ select d, m.id, t from members m, generate_series(1,5) d,
   unnest(array['organizar','estudos','leitura','celular','mochila']) t
  where m.role = 'child';
 
--- Quinta: fogão frio, opcional e sem pontos
-insert into public.rotation (weekday, member_id, task_type_id)
-select 4, id, 'fogao' from members where role = 'child';
 
 insert into public.reward_options (title, emoji, est_cost, description) values
  ('Passeio especial', '🎡', 150, 'Um passeio escolhido pelas três'),
@@ -1033,7 +1030,8 @@ insert into public.family_missions (title, emoji, description) values
  ('Organizar uma estante juntas', '📚', 'As três escolhem uma estante e deixam tudo lindo.'),
  ('Preparar uma brincadeira para a família', '🎈', 'Inventem uma brincadeira para o Dia da Família.'),
  ('Escolher um livro para ler juntas', '📖', 'Escolham um livro e combinem um capítulo por semana.'),
- ('Ajudar a preparar o Dia da Família', '🎉', 'Decoração, lanche ou convite — vocês decidem!');
+ ('Ajudar a preparar o Dia da Família', '🎉', 'Decoração, lanche ou convite — vocês decidem!'),
+ ('Limpar o fogão frio (quinta)', '✨', 'Opcional, sem pontos. SOMENTE com o fogão completamente frio e com um adulto junto. Só pano úmido.');
 -- Fotos privadas das meninas (somente membros logados da família veem)
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('fotos', 'fotos', false, 2097152, array['image/jpeg','image/png','image/webp'])
