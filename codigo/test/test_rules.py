@@ -152,6 +152,29 @@ check('Criança vê só os próprios descontos', q("select count(distinct member
 check('Criança recebe aviso do desconto', q("select count(*) from notifications where member_id=%s and kind='adjust'", (V['mid'],), one=True) == 1)
 check('Desconto fica no histórico', q("select count(*) from audit_log where table_name='point_adjustments' and reason='Bilhete da professora'", one=True) == 1)
 
+# ---------- ausências e horários ----------
+def kst(member, d): return q("select status from assignments where member_id=%s and date=%s and task_type_id='organizar'", (member['mid'], d), one=True)
+poss0 = month_stats(K)['possible']
+r = q("select add_override('ausencia', '2026-11-05', '2026-11-06', %s, 'todas', null, 'Fim de semana na casa da mãe')", (K['mid'],), as_user=pai, one=True)
+check('Ausência dispensa as tarefas do período', kst(K, '2026-11-05') == 'excused' and kst(L, '2026-11-05') == 'pending', r)
+check('Ausência não prejudica a meta (sai dos pontos possíveis)', month_stats(K)['possible'] < poss0)
+check('Criança não registra ausência', fails("select add_override('ausencia', '2026-11-12', '2026-11-12', %s, 'todas', null, 'quero folga')", (K['mid'],), as_user=K['uid']))
+q("select cancel_override(%s)", (r['id'],), as_user=pai)
+check('Cancelar ausência devolve as tarefas', kst(K, '2026-11-05') == 'pending' and month_stats(K)['possible'] == poss0)
+# ausência futura: cria hoje e já reduz o possível projetado
+proj0 = q("select family_summary()", as_user=pai, one=True)['children'][0]['month']['projected_possible']
+q("select add_override('ausencia', '2026-11-20', '2026-11-22', %s, 'todas', null, 'Viagem com a mãe')", (K['mid'],), as_user=pai)
+proj1 = q("select family_summary()", as_user=pai, one=True)['children'][0]['month']['projected_possible']
+check('Ausência futura já ajusta a meta do mês', proj1 < proj0, (proj0, proj1))
+# horário especial
+q("select add_override('horario', '2026-11-13', '2026-11-13', null, 'estudo', '16:00', 'Reunião na escola')", as_user=mae)
+hh = q("select distinct to_char(due_at at time zone 'America/Sao_Paulo','HH24:MI') from assignments a join task_types t on t.id=a.task_type_id where a.date='2026-11-13' and t.category='estudo' and a.status='pending'")
+check('Mudança de horário do dia vale para todas', hh == [('16:00',)], hh)
+a_m = q("select id::text from assignments where member_id=%s and date='2026-11-13' and task_type_id='mochila'", (V['mid'],), one=True)
+q("select set_task_due(%s, '20:30', 'Chegamos tarde')", (a_m,), as_user=pai)
+check('Mudar prazo de uma tarefa só', q("select to_char(due_at at time zone 'America/Sao_Paulo','HH24:MI') from assignments where id=%s", (a_m,), one=True) == '20:30')
+check('Criança não muda prazo', fails("select set_task_due(%s, '23:00', 'quero mais tempo')", (a_m,), as_user=V['uid']))
+
 # ---------- fechamento do mês ----------
 q("update assignments set status='awaiting', completed_at=due_at - interval '5 min', on_time=true where date between '2026-10-01' and '2026-10-31' and not optional")
 q("select review_task(id, true, null) from assignments where status='awaiting' and date < '2026-11-01'", as_user=pai)

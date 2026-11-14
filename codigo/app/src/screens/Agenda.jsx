@@ -10,6 +10,7 @@ export default function Agenda() {
   const [rot, setRot] = useState(null)
   const [types, setTypes] = useState({})
   const [asg, setAsg] = useState([])
+  const [ovs, setOvs] = useState([])
 
   const range = useMemo(() => {
     if (view === 'dia') return [date, date]
@@ -21,7 +22,8 @@ export default function Agenda() {
     Promise.all([
       sel(supabase.from('rotation').select('*').eq('active', true)),
       sel(supabase.from('task_types').select('*')),
-    ]).then(([r, t]) => { setRot(r); setTypes(Object.fromEntries(t.map((x) => [x.id, x]))) }).catch(() => {})
+      sel(supabase.from('schedule_overrides').select('*').eq('active', true)),
+    ]).then(([r, t, o]) => { setRot(r); setTypes(Object.fromEntries(t.map((x) => [x.id, x]))); setOvs(o) }).catch(() => {})
   }, [version])
   useEffect(() => {
     sel(supabase.from('assignments').select('*').gte('date', range[0]).lte('date', range[1]).order('due_at')).then(setAsg).catch(() => {})
@@ -36,7 +38,10 @@ export default function Agenda() {
     if (d < start) return []
     return rot.filter((r) => r.weekday === dow(d) && types[r.task_type_id]?.active).map((r) => {
       const t = types[r.task_type_id]
-      return { id: r.id + d, date: d, member_id: r.member_id, task_type_id: r.task_type_id, task_name: t.name, icon: t.icon, points_max: t.points, optional: t.optional, status: 'future', due: r.due_time || t.default_due }
+      const hit = (o) => d >= o.date_from && d <= o.date_to && (!o.member_id || o.member_id === r.member_id) && (o.scope === 'todas' || o.scope === t.category || o.scope === t.id)
+      const away = ovs.find((o) => o.kind === 'ausencia' && hit(o))
+      const hr = [...ovs].reverse().find((o) => o.kind === 'horario' && hit(o))
+      return { id: r.id + d, date: d, member_id: r.member_id, task_type_id: r.task_type_id, task_name: t.name, icon: t.icon, points_max: t.points, optional: t.optional, status: away ? 'away' : 'future', note: away ? 'Ausência: ' + away.reason : null, due: hr ? hr.new_due : r.due_time || t.default_due }
     })
   }
   const visibleKids = isParent ? kids : kids
@@ -64,12 +69,13 @@ export default function Agenda() {
                 {hidden ? <p className="muted small">As tarefas das irmãs aparecem para elas mesmas. 💜</p> :
                   list.length === 0 ? <p className="muted small">Sem missões neste dia.</p> :
                     <ul className="day-list">{list.map((t) => {
-                      const st = t.status === 'future' ? { label: 'Agendada', cls: 'st-future' } : statusOf(t, today)
-                      return <li key={t.id}><span>{t.icon} {t.task_name}{t.optional ? ' (opcional)' : ''}</span><span className="muted small">até {t.status === 'future' ? timeStr(t.due) : fmtTime(t.due_at)}</span><span className={'badge ' + st.cls}>{st.label}</span></li>
+                      const st = t.status === 'future' ? { label: 'Agendada', cls: 'st-future' } : t.status === 'away' ? { label: 'Ausente (dispensada)', cls: 'st-excused' } : statusOf(t, today)
+                      return <li key={t.id}><span>{t.icon} {t.task_name}{t.optional ? ' (opcional)' : ''}</span><span className="muted small">até {['future', 'away'].includes(t.status) ? timeStr(t.due) : fmtTime(t.due_at)}</span><span className={'badge ' + st.cls}>{st.label}</span></li>
                     })}</ul>}
               </Section>
             )
           })}
+          {ovs.filter((o) => date >= o.date_from && date <= o.date_to).map((o) => <div key={o.id} className="banner culto">{o.kind === 'ausencia' ? '🏠' : '🕐'} {o.member_id ? kids.find((k) => k.id === o.member_id)?.name : 'Todas'}: {o.kind === 'ausencia' ? 'ausente' : 'prazo especial ' + timeStr(o.new_due)} — {o.reason}</div>)}
           {settings && dow(date) === settings.family_day_weekday && <div className="banner family">🎉 Dia da Família às {timeStr(settings.family_day_time)}</div>}
           {settings && dow(date) === settings.culto_weekday && <div className="banner culto">⛪ Culto às {timeStr(settings.culto_time)}</div>}
         </>
@@ -83,7 +89,7 @@ export default function Agenda() {
               <button key={d} className={'week-day' + (d === today ? ' today' : '')} onClick={() => { setDate(d); setView('dia') }}>
                 <b>{WD_SHORT[dow(d)]} {shortDate(d)}</b>
                 {visibleKids.map((k) => {
-                  const mine = list.filter((t) => t.member_id === k.id && !t.optional)
+                  const mine = list.filter((t) => t.member_id === k.id && !t.optional && t.status !== 'away' && t.status !== 'excused')
                   if (!mine.length) return null
                   const hidden = !isParent && k.id !== me.id && d <= today
                   return <div key={k.id} className="wk-kid"><span className="dot" style={{ background: k.color }} />{k.name}: {hidden ? '…' : (mine.filter((t) => types[t.task_type_id]?.category === 'casa' && t.task_type_id !== 'organizar').map((t) => t.icon).join(' ') || '📚')}</div>

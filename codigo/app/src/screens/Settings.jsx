@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useApp, Section, Loading, Avatar, Modal, Tabs } from '../components'
-import { rpc, sel, supabase, kidPassword, resizeImage, WEEKDAYS, WD_SHORT, AVATARS, timeStr, todaySP, dow } from '../lib'
+import { rpc, sel, supabase, kidPassword, resizeImage, WEEKDAYS, WD_SHORT, AVATARS, timeStr, todaySP, dow, addDays, shortDate } from '../lib'
 
 export default function Settings() {
   const { go, isParent } = useApp()
   const [page, setPage] = useState(null)
   if (!isParent) return null
-  const pages = { convite: Invite, membros: Members, rodizio: Rotation, tarefas: TaskTypes, horarios: Blocks, metas: Goals, avisos: Alerts }
+  const pages = { ausencias: Overrides, convite: Invite, membros: Members, rodizio: Rotation, tarefas: TaskTypes, horarios: Blocks, metas: Goals, avisos: Alerts }
   if (page) { const P = pages[page]; return <div className="stack"><button className="link" onClick={() => setPage(null)}>← voltar</button><P /></div> }
   const items = [['relatorios', '📊', 'Relatórios e fechamento do mês'], ['convite', '📲', 'Convidar a família / instalar no celular'], ['membros', '👨‍👩‍👧‍👧', 'Membros, fotos e PINs'],
-    ['rodizio', '🔁', 'Editar rodízio'], ['tarefas', '📝', 'Tarefas, pontos e prazos'], ['horarios', '🕐', 'Horários da tarde'], ['metas', '🎯', 'Metas, prêmios e datas'], ['avisos', '🔔', 'Avisos neste aparelho']]
+    ['ausencias', '🗓️', 'Ausências e horários especiais'], ['rodizio', '🔁', 'Editar rodízio'], ['tarefas', '📝', 'Tarefas, pontos e prazos'], ['horarios', '🕐', 'Horários da tarde'], ['metas', '🎯', 'Metas, prêmios e datas'], ['avisos', '🔔', 'Avisos neste aparelho']]
   return (
     <div className="stack">
       <h1>Mais opções</h1>
@@ -252,6 +252,82 @@ function Alerts() {
         {perm === 'unsupported' ? <p className="muted">Este navegador não oferece avisos do sistema.</p>
           : perm === 'granted' ? <p className="ok">✅ Avisos permitidos neste aparelho.</p>
             : <button className="btn primary" onClick={async () => setPerm(await Notification.requestPermission())}>Permitir avisos</button>}
+      </Section>
+    </>
+  )
+}
+
+export const SCOPES = [['todas', 'Todas as tarefas'], ['casa', 'Tarefas da casa'], ['estudo', 'Estudos e leitura'], ['rotina', 'Celular e mochila']]
+function nextWeekend(from) { const d = dow(from); const sat = addDays(from, d === 0 ? -1 : (6 - d)); return [sat, addDays(sat, 1)] }
+
+function Overrides() {
+  const { kids, members, version, toast, refresh } = useApp()
+  const today = todaySP()
+  const [list, setList] = useState(null)
+  const [types, setTypes] = useState([])
+  const [kind, setKind] = useState('ausencia')
+  const [who, setWho] = useState(null)
+  const [from, setFrom] = useState(nextWeekend(today)[0])
+  const [to, setTo] = useState(nextWeekend(today)[1])
+  const [scope, setScope] = useState('todas')
+  const [due, setDue] = useState('15:00')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    Promise.all([sel(supabase.from('schedule_overrides').select('*').eq('active', true).gte('date_to', addDays(today, -31)).order('date_from')),
+      sel(supabase.from('task_types').select('id,name,icon').eq('active', true).order('sort'))]).then(([l, t]) => { setList(l); setTypes(t) }).catch((e) => toast(e.message, 'err'))
+  }, [version])
+  const name = (id) => (id ? members.find((m) => m.id === id)?.name : 'Todas')
+  const scopeName = (sc) => SCOPES.find((x) => x[0] === sc)?.[1] || types.find((t) => t.id === sc)?.name || sc
+  const save = async () => {
+    setBusy(true)
+    try {
+      const r = await rpc('add_override', { p_kind: kind, p_from: from, p_to: to, p_member: who, p_scope: kind === 'ausencia' ? 'todas' : scope, p_new_due: kind === 'horario' ? due : null, p_reason: reason.trim() })
+      toast(kind === 'ausencia' ? `Ausência registrada (${r.tarefas_alteradas} tarefas já dispensadas)` : 'Horário especial salvo'); setReason(''); refresh()
+    } catch (e) { toast(e.message, 'err') }
+    setBusy(false)
+  }
+  const wk = nextWeekend(today), wk2 = [addDays(wk[0], 7), addDays(wk[1], 7)]
+  return (
+    <>
+      <h1>Ausências e horários especiais</h1>
+      <p className="muted small">Para dias diferentes da rotina. As tarefas de quem está ausente ficam <b>dispensadas</b> e não prejudicam a meta. Horários especiais mudam o prazo só naqueles dias.</p>
+      <Section>
+        <div className="tabs"><button className={kind === 'ausencia' ? 'on' : ''} onClick={() => setKind('ausencia')}>🏠 Ausência</button><button className={kind === 'horario' ? 'on' : ''} onClick={() => setKind('horario')}>🕐 Mudar horário</button></div>
+        <p className="field"><span>Quem</span></p>
+        <div className="to-row">
+          {kids.map((k) => <button key={k.id} className={'to-pick' + (who === k.id ? ' on' : '')} onClick={() => setWho(k.id)}><Avatar member={k} size={40} /><small>{k.name}</small></button>)}
+          <button className={'to-pick' + (who === null ? ' on' : '')} onClick={() => setWho(null)}><span style={{ fontSize: 30 }}>👨‍👩‍👧‍👧</span><small>Todas</small></button>
+        </div>
+        <div className="chips">
+          <button className="chip" onClick={() => { setFrom(today); setTo(today) }}>Hoje</button>
+          <button className="chip" onClick={() => { setFrom(addDays(today, 1)); setTo(addDays(today, 1)) }}>Amanhã</button>
+          <button className="chip" onClick={() => { setFrom(wk[0]); setTo(wk[1]) }}>Fim de semana {shortDate(wk[0])}</button>
+          <button className="chip" onClick={() => { setFrom(wk2[0]); setTo(wk2[1]) }}>Fim de semana {shortDate(wk2[0])}</button>
+        </div>
+        <div className="row wrap">
+          <label className="field sm"><span>De</span><input type="date" value={from} onChange={(e) => { setFrom(e.target.value); if (e.target.value > to) setTo(e.target.value) }} /></label>
+          <label className="field sm"><span>Até</span><input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} /></label>
+        </div>
+        {kind === 'horario' && <div className="row wrap">
+          <label className="field sm"><span>Quais tarefas</span><select value={scope} onChange={(e) => setScope(e.target.value)}>
+            {SCOPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            <optgroup label="Uma tarefa">{types.map((t) => <option key={t.id} value={t.id}>{t.icon} {t.name}</option>)}</optgroup>
+          </select></label>
+          <label className="field sm"><span>Novo prazo</span><input type="time" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+        </div>}
+        <label className="field"><span>Motivo</span><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={kind === 'ausencia' ? 'Ex.: fim de semana na casa da mãe' : 'Ex.: consulta médica, reunião na escola'} /></label>
+        {kind === 'ausencia' && <div className="chips">{['Fim de semana na casa da mãe', 'Viagem', 'Doente', 'Passeio da escola'].map((x) => <button key={x} className="chip" onClick={() => setReason(x)}>{x}</button>)}</div>}
+        <button className="btn primary full" disabled={busy || reason.trim().length < 3 || !from || !to} onClick={save}>{busy ? 'Salvando…' : kind === 'ausencia' ? `Registrar ausência de ${name(who)}` : 'Salvar horário especial'}</button>
+      </Section>
+      <Section title="Registrados">
+        {!list ? <Loading /> : list.length === 0 ? <p className="muted small">Nenhuma ausência ou horário especial registrado.</p> : (
+          <ul className="feed">{list.map((o) => (
+            <li key={o.id}><span>{o.kind === 'ausencia' ? '🏠' : '🕐'} <b>{name(o.member_id)}</b> · {shortDate(o.date_from)}{o.date_to !== o.date_from ? ' a ' + shortDate(o.date_to) : ''} · {o.kind === 'ausencia' ? 'ausente' : `${scopeName(o.scope)} até ${timeStr(o.new_due)}`}</span>
+              <small>{o.reason}{o.date_to < today ? ' · já passou' : ''}</small>
+              {o.date_to >= today && <button className="btn small ghost" style={{ alignSelf: 'flex-start' }} onClick={async () => { try { await rpc('cancel_override', { p_id: o.id }); toast('Cancelado — tarefas voltaram ao normal'); refresh() } catch (e) { toast(e.message, 'err') } }}>Cancelar</button>}
+            </li>))}</ul>
+        )}
       </Section>
     </>
   )
