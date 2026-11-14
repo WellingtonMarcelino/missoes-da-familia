@@ -175,6 +175,25 @@ q("select set_task_due(%s, '20:30', 'Chegamos tarde')", (a_m,), as_user=pai)
 check('Mudar prazo de uma tarefa só', q("select to_char(due_at at time zone 'America/Sao_Paulo','HH24:MI') from assignments where id=%s", (a_m,), one=True) == '20:30')
 check('Criança não muda prazo', fails("select set_task_due(%s, '23:00', 'quero mais tempo')", (a_m,), as_user=V['uid']))
 
+# ---------- tarefas extras ----------
+n = q("select add_extra_task(array[%s,%s]::uuid[], today_sp(), 'Arrumar o quintal', '🌿', 10, '23:59', null, false)", (K['mid'], L['mid']), as_user=pai, one=True)
+check('Tarefa extra criada para as escolhidas', n == 2 and q("select count(*) from assignments where task_name='Arrumar o quintal' and member_id=%s", (V['mid'],), one=True) == 0)
+q("select add_extra_task(array[%s]::uuid[], today_sp(), 'Arrumar o quintal', '🌿', 5, '23:59', null, false)", (K['mid'],), as_user=pai)
+check('Pode haver duas tarefas extras no mesmo dia', q("select count(*) from assignments where task_name='Arrumar o quintal' and member_id=%s", (K['mid'],), one=True) == 2)
+ex = q("select id::text from assignments where task_name='Arrumar o quintal' and member_id=%s and points_max=10", (K['mid'],), one=True)
+q("update assignments set due_at = now() + interval '1 hour' where id=%s", (ex,))
+q("select complete_task(%s)", (ex,), as_user=K['uid'])
+check('Tarefa extra pontua normalmente', q("select review_task(%s, true, null)", (ex,), as_user=pai, one=True)['points_awarded'] == 10)
+check('Criança não cria tarefa extra', fails("select add_extra_task(array[%s]::uuid[], today_sp(), 'Folga', '⭐', 50, '23:00', null, false)", (K['mid'],), as_user=K['uid']))
+ex2 = q("select id::text from assignments where task_name='Arrumar o quintal' and member_id=%s and points_max=5", (K['mid'],), one=True)
+q("select remove_extra_task(%s)", (ex2,), as_user=pai)
+check('Apagar tarefa extra pendente', q("select count(*) from assignments where id=%s", (ex2,), one=True) == 0)
+check('Não apaga tarefa feita', fails("select remove_extra_task(%s)", (ex,), as_user=pai))
+pj0 = q("select family_summary()", as_user=pai, one=True)['children'][2]['month']['projected_possible']
+q("select add_extra_task(array[%s]::uuid[], '2026-11-25', 'Ajudar na festa', '🎉', 10, '18:00', null, false)", (V['mid'],), as_user=pai)
+pj1 = q("select family_summary()", as_user=pai, one=True)['children'][2]['month']['projected_possible']
+check('Tarefa extra futura entra na meta do mês', pj1 == pj0 + 10, (pj0, pj1))
+
 # ---------- fechamento do mês ----------
 q("update assignments set status='awaiting', completed_at=due_at - interval '5 min', on_time=true where date between '2026-10-01' and '2026-10-31' and not optional")
 q("select review_task(id, true, null) from assignments where status='awaiting' and date < '2026-11-01'", as_user=pai)

@@ -170,6 +170,8 @@ export function ParentActions({ a, setAsk, act, compact }) {
         <button className="btn ghost small" onClick={() => setAsk({ title: 'Mudar o prazo só deste dia', label: 'Motivo', placeholder: 'Ex.: chegamos tarde hoje', okText: 'Salvar prazo', extra: <label className="field"><span>Novo prazo</span><input type="time" id="novo-prazo" defaultValue={new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(a.due_at))} /></label>, onOk: (t) => act(() => rpc('set_task_due', { p_id: a.id, p_time: document.getElementById('novo-prazo').value, p_reason: t }), 'Prazo alterado') })}>🕐 Mudar prazo</button>}
       {a.status === 'pending' &&
         <button className="btn ghost small" onClick={() => act(() => rpc('mark_missed', { p_id: a.id, p_reason: 'Não realizada' }), 'Registrada como não realizada')}>Não realizada</button>}
+      {a.status === 'pending' && a.task_type_id?.startsWith('extra_') &&
+        <button className="btn danger small" onClick={() => act(() => rpc('remove_extra_task', { p_id: a.id }), 'Tarefa extra apagada')}>🗑️ Apagar extra</button>}
       {['approved', 'rejected', 'excused', 'missed'].includes(a.status) &&
         <button className="btn ghost small" onClick={() => setAsk({ title: 'Desfazer revisão', label: 'Justificativa', placeholder: 'Ex.: aprovei por engano', okText: 'Desfazer', onOk: (t) => act(() => rpc('reopen_task', { p_id: a.id, p_reason: t }), 'Revisão desfeita') })}>Desfazer</button>}
     </div>

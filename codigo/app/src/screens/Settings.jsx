@@ -1,20 +1,24 @@
 import { useEffect, useState } from 'react'
 import { useApp, Section, Loading, Avatar, Modal, Tabs } from '../components'
+import { ExtraTaskModal } from './Panel'
 import { rpc, sel, supabase, kidPassword, resizeImage, WEEKDAYS, WD_SHORT, AVATARS, timeStr, todaySP, dow, addDays, shortDate } from '../lib'
 
 export default function Settings() {
   const { go, isParent } = useApp()
   const [page, setPage] = useState(null)
+  const [extra, setExtra] = useState(false)
+  const { kids, toast, refresh } = useApp()
   if (!isParent) return null
   const pages = { ausencias: Overrides, convite: Invite, membros: Members, rodizio: Rotation, tarefas: TaskTypes, horarios: Blocks, metas: Goals, avisos: Alerts }
   if (page) { const P = pages[page]; return <div className="stack"><button className="link" onClick={() => setPage(null)}>← voltar</button><P /></div> }
   const items = [['relatorios', '📊', 'Relatórios e fechamento do mês'], ['convite', '📲', 'Convidar a família / instalar no celular'], ['membros', '👨‍👩‍👧‍👧', 'Membros, fotos e PINs'],
-    ['ausencias', '🗓️', 'Ausências e horários especiais'], ['rodizio', '🔁', 'Editar rodízio'], ['tarefas', '📝', 'Tarefas, pontos e prazos'], ['horarios', '🕐', 'Horários da tarde'], ['metas', '🎯', 'Metas, prêmios e datas'], ['avisos', '🔔', 'Avisos neste aparelho']]
+    ['extra', '➕', 'Incluir tarefa extra (um dia)'], ['tarefas', '📝', 'Tarefas fixas: incluir, pontos e prazos'], ['ausencias', '🗓️', 'Ausências e horários especiais'], ['rodizio', '🔁', 'Editar rodízio'], ['horarios', '🕐', 'Horários da tarde'], ['metas', '🎯', 'Metas, prêmios e datas'], ['avisos', '🔔', 'Avisos neste aparelho']]
   return (
     <div className="stack">
       <h1>Mais opções</h1>
-      <div className="menu">{items.map(([k, i, l]) => <button key={k} className="menu-item" onClick={() => (k === 'relatorios' ? go('relatorios') : setPage(k))}><span>{i}</span>{l}<em>›</em></button>)}</div>
+      <div className="menu">{items.map(([k, i, l]) => <button key={k} className="menu-item" onClick={() => (k === 'relatorios' ? go('relatorios') : k === 'extra' ? setExtra(true) : setPage(k))}><span>{i}</span>{l}<em>›</em></button>)}</div>
       <button className="btn ghost full" onClick={() => supabase.auth.signOut()}>Sair desta conta</button>
+      {extra && <ExtraTaskModal kids={kids} act={async (fn, msg) => { try { await fn(); toast(msg); refresh() } catch (e) { toast(e.message, 'err') } }} onClose={() => setExtra(false)} />}
     </div>
   )
 }
@@ -160,12 +164,33 @@ function Rotation() {
 function TaskTypes() {
   const { version, toast, refresh } = useApp()
   const [types, setTypes] = useState(null)
-  useEffect(() => { sel(supabase.from('task_types').select('*').order('sort')).then(setTypes) }, [version])
+  useEffect(() => { sel(supabase.from('task_types').select('*').order('sort')).then((t) => setTypes(t.filter((x) => !x.id.startsWith('extra_')))) }, [version])
+  const [nw, setNw] = useState({ name: '', icon: '⭐', points: 5, category: 'casa', due: '13:45', guidance: '' })
   if (!types) return <Loading />
+  const create = async () => {
+    try {
+      const id = 'custom_' + Math.random().toString(36).slice(2, 10)
+      await sel(supabase.from('task_types').insert({ id, name: nw.name.trim(), icon: nw.icon, points: Number(nw.points), category: nw.category, default_due: nw.due, guidance: nw.guidance.trim() || null, optional: false, sort: 50, active: true }))
+      toast('Tarefa criada! Agora vá em “Editar rodízio” e escolha quem faz e em que dias.'); setNw({ ...nw, name: '', guidance: '' }); refresh()
+    } catch (e) { toast(e.message, 'err') }
+  }
   const save = async (t, patch) => { try { await sel(supabase.from('task_types').update(patch).eq('id', t.id)); toast('Salvo'); refresh() } catch (e) { toast(e.message, 'err') } }
   return (
     <>
-      <h1>Tarefas, pontos e prazos</h1>
+      <h1>Tarefas fixas</h1>
+      <Section title="➕ Incluir nova tarefa fixa">
+        <p className="muted small">Ela passa a existir para sempre. Depois, em <b>Editar rodízio</b>, escolha quem faz e em quais dias. Para algo de um dia só, use “Incluir tarefa extra”.</p>
+        <label className="field"><span>Nome</span><input value={nw.name} maxLength={80} onChange={(e) => setNw({ ...nw, name: e.target.value })} placeholder="Ex.: Regar as plantas" /></label>
+        <div className="emoji-row">{['⭐', '🪴', '🐶', '🗑️', '🧽', '🛏️', '👟', '🧺', '📚', '🎹'].map((e) => <button key={e} className={nw.icon === e ? 'on' : ''} onClick={() => setNw({ ...nw, icon: e })}>{e}</button>)}</div>
+        <div className="row wrap">
+          <label className="field sm"><span>Tipo</span><select value={nw.category} onChange={(e) => setNw({ ...nw, category: e.target.value })}><option value="casa">Tarefa da casa</option><option value="estudo">Estudo</option><option value="rotina">Rotina</option></select></label>
+          <label className="field sm"><span>Pontos</span><input type="number" min="0" max="50" value={nw.points} onChange={(e) => setNw({ ...nw, points: e.target.value })} /></label>
+          <label className="field sm"><span>Prazo</span><input type="time" value={nw.due} onChange={(e) => setNw({ ...nw, due: e.target.value })} /></label>
+        </div>
+        <label className="field"><span>Orientação de segurança (opcional)</span><input value={nw.guidance} onChange={(e) => setNw({ ...nw, guidance: e.target.value })} /></label>
+        <button className="btn primary full" disabled={nw.name.trim().length < 2} onClick={create}>Criar tarefa fixa</button>
+      </Section>
+      <h2>Tarefas existentes</h2>
       <p className="muted small">Mudanças valem para as tarefas criadas a partir de agora. O histórico não muda.</p>
       {types.map((t) => (
         <Section key={t.id} className={t.active ? '' : 'faded'}>

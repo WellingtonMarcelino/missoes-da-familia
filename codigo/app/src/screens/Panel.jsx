@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApp, Avatar, Section, Loading, Empty, AskModal, Modal } from '../components'
-import { rpc, sel, supabase, fmtTime, fmtDateTime, shortDate, todaySP } from '../lib'
+import { rpc, sel, supabase, fmtTime, fmtDateTime, shortDate, todaySP, addDays } from '../lib'
 import { ParentActions } from './Missions'
 
 export function describeAudit(e, members) {
@@ -37,6 +37,7 @@ export default function Panel() {
   const [feed, setFeed] = useState([])
   const [ask, setAsk] = useState(null)
   const [penalty, setPenalty] = useState(false)
+  const [extra, setExtra] = useState(false)
 
   useEffect(() => {
     const today = todaySP()
@@ -56,7 +57,7 @@ export default function Panel() {
       <h1>Painel dos responsáveis</h1>
       <div className="kid-chips">{kids.map((k) => <button key={k.id} className="chip" style={{ borderColor: k.color }} onClick={() => go('menina/' + k.id)}><Avatar member={k} size={28} />{k.name}</button>)}</div>
 
-      <button className="btn ghost" onClick={() => setPenalty(true)}>⚠️ Registrar desconto ou bônus</button>
+      <div className="row wrap"><button className="btn ghost grow" onClick={() => setExtra(true)}>➕ Tarefa extra</button><button className="btn ghost grow" onClick={() => setPenalty(true)}>⚠️ Desconto ou bônus</button></div>
 
       <Section title={`✅ Fila de aprovação (${queue.length})`} right={queue.length > 1 && <button className="btn ok small" onClick={() => act(async () => { for (const a of queue) await rpc('review_task', { p_id: a.id, p_approve: true, p_reason: null }) }, 'Todas aprovadas ✅')}>Aprovar todas</button>}>
         {queue.length === 0 ? <Empty icon="🎉">Nada aguardando aprovação.</Empty> : queue.map((a) => (
@@ -88,6 +89,7 @@ export default function Panel() {
         )}
         <button className="link" onClick={() => go('relatorios')}>Ver histórico completo e relatórios →</button>
       </Section>
+      {extra && <ExtraTaskModal kids={kids} act={act} onClose={() => setExtra(false)} />}
       {penalty && <PenaltyModal kids={kids} settings={settings} act={act} onClose={() => setPenalty(false)} />}
       {ask && <AskModal {...ask} onClose={() => setAsk(null)} />}
     </div>
@@ -124,6 +126,44 @@ export function PenaltyModal({ kids, settings, act, onClose }) {
       <label className="field"><span>Pontos {kind === 'bonus' ? 'a somar' : 'a descontar'}</span><input type="number" min="1" max="50" value={pts} onChange={(e) => setPts(e.target.value)} /></label>
       <label className="field"><span>O que aconteceu (ela verá esta mensagem)</span><textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={kind === 'escola' ? 'Ex.: bilhete da professora sobre conversa na aula' : 'Ex.: discussão na hora da louça. Vamos conversar sobre isso.'} /></label>
       <button className={'btn full ' + (kind === 'bonus' ? 'ok' : 'danger')} disabled={busy || !who.length || !Number(pts) || reason.trim().length < 3} onClick={save}>{busy ? 'Salvando…' : kind === 'bonus' ? 'Dar bônus' : 'Registrar desconto'}</button>
+    </Modal>
+  )
+}
+
+const EXTRA_ICONS = ['⭐', '🌿', '🧽', '🛒', '🐶', '🧺', '🪴', '🎉', '📦', '🚗', '🍽️', '🧹']
+export function ExtraTaskModal({ kids, act, onClose }) {
+  const today = todaySP()
+  const [who, setWho] = useState([])
+  const [date, setDate] = useState(today)
+  const [name, setName] = useState('')
+  const [icon, setIcon] = useState('⭐')
+  const [pts, setPts] = useState(5)
+  const [optional, setOptional] = useState(false)
+  const [due, setDue] = useState('18:00')
+  const [guide, setGuide] = useState('')
+  const [busy, setBusy] = useState(false)
+  const toggle = (id) => setWho(who.includes(id) ? who.filter((x) => x !== id) : [...who, id])
+  const save = async () => {
+    setBusy(true)
+    await act(() => rpc('add_extra_task', { p_members: who, p_date: date, p_name: name.trim(), p_icon: icon, p_points: optional ? 0 : Number(pts), p_due: due, p_guidance: guide || null, p_optional: optional }), 'Tarefa extra criada ⭐')
+    setBusy(false); onClose()
+  }
+  return (
+    <Modal title="Tarefa extra (só neste dia)" onClose={onClose}>
+      <p className="muted small">Para algo que não está na rotina. Ela aparece na lista de missões do dia escolhido, com pontos e aprovação como as outras.</p>
+      <label className="field"><span>O que fazer</span><input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder="Ex.: arrumar o quintal, ajudar a guardar as compras" /></label>
+      <div className="emoji-row">{EXTRA_ICONS.map((e) => <button key={e} className={icon === e ? 'on' : ''} onClick={() => setIcon(e)}>{e}</button>)}</div>
+      <p className="field"><span><b>Para quem</b></span></p>
+      <div className="to-row">{kids.map((k) => <button key={k.id} className={'to-pick' + (who.includes(k.id) ? ' on' : '')} onClick={() => toggle(k.id)}><Avatar member={k} size={40} /><small>{k.name}</small></button>)}</div>
+      <div className="chips"><button className="chip" onClick={() => setDate(today)}>Hoje</button><button className="chip" onClick={() => setDate(addDays(today, 1))}>Amanhã</button></div>
+      <div className="row wrap">
+        <label className="field sm"><span>Dia</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="field sm"><span>Prazo</span><input type="time" value={due} onChange={(e) => setDue(e.target.value)} /></label>
+        <label className="field sm"><span>Pontos</span><input type="number" min="0" max="50" value={optional ? 0 : pts} disabled={optional} onChange={(e) => setPts(e.target.value)} /></label>
+      </div>
+      <label className="switch"><input type="checkbox" checked={optional} onChange={(e) => setOptional(e.target.checked)} /> Opcional, sem pontos (não conta na meta)</label>
+      <label className="field"><span>Orientação (opcional)</span><input value={guide} onChange={(e) => setGuide(e.target.value)} placeholder="Ex.: usar luvas, chamar um adulto para…" /></label>
+      <button className="btn primary full" disabled={busy || name.trim().length < 2 || !who.length || !date || !due} onClick={save}>{busy ? 'Salvando…' : 'Criar tarefa extra'}</button>
     </Modal>
   )
 }

@@ -36,13 +36,14 @@ export default function Agenda() {
     if (d <= today) return asg.filter((a) => a.date === d)
     const start = settings?.start_date || today
     if (d < start) return []
-    return rot.filter((r) => r.weekday === dow(d) && types[r.task_type_id]?.active).map((r) => {
+    const planned = asg.filter((a) => a.date === d)
+    return planned.concat(rot.filter((r) => r.weekday === dow(d) && types[r.task_type_id]?.active).map((r) => {
       const t = types[r.task_type_id]
       const hit = (o) => d >= o.date_from && d <= o.date_to && (!o.member_id || o.member_id === r.member_id) && (o.scope === 'todas' || o.scope === t.category || o.scope === t.id)
       const away = ovs.find((o) => o.kind === 'ausencia' && hit(o))
       const hr = [...ovs].reverse().find((o) => o.kind === 'horario' && hit(o))
       return { id: r.id + d, date: d, member_id: r.member_id, task_type_id: r.task_type_id, task_name: t.name, icon: t.icon, points_max: t.points, optional: t.optional, status: away ? 'away' : 'future', note: away ? 'Ausência: ' + away.reason : null, due: hr ? hr.new_due : r.due_time || t.default_due }
-    })
+    }))
   }
   const visibleKids = isParent ? kids : kids
   const move = (n) => setDate(view === 'dia' ? addDays(date, n) : view === 'semana' ? addDays(date, 7 * n) : addMonths(date, n))
@@ -69,8 +70,8 @@ export default function Agenda() {
                 {hidden ? <p className="muted small">As tarefas das irmãs aparecem para elas mesmas. 💜</p> :
                   list.length === 0 ? <p className="muted small">Sem missões neste dia.</p> :
                     <ul className="day-list">{list.map((t) => {
-                      const st = t.status === 'future' ? { label: 'Agendada', cls: 'st-future' } : t.status === 'away' ? { label: 'Ausente (dispensada)', cls: 'st-excused' } : statusOf(t, today)
-                      return <li key={t.id}><span>{t.icon} {t.task_name}{t.optional ? ' (opcional)' : ''}</span><span className="muted small">até {['future', 'away'].includes(t.status) ? timeStr(t.due) : fmtTime(t.due_at)}</span><span className={'badge ' + st.cls}>{st.label}</span></li>
+                      const st = t.status === 'pending' && t.date > today ? { label: 'Agendada (extra)', cls: 'st-future' } : t.status === 'future' ? { label: 'Agendada', cls: 'st-future' } : t.status === 'away' ? { label: 'Ausente (dispensada)', cls: 'st-excused' } : statusOf(t, today)
+                      return <li key={t.id}><span>{t.icon} {t.task_name}{t.optional ? ' (opcional)' : ''}</span><span className="muted small">até {t.due_at ? fmtTime(t.due_at) : timeStr(t.due)}</span><span className={'badge ' + st.cls}>{st.label}</span></li>
                     })}</ul>}
               </Section>
             )
